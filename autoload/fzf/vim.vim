@@ -355,7 +355,7 @@ function! s:history_sink(type, lines)
   if key == 'ctrl-e'
     call histadd(a:type, item)
     redraw
-    call feedkeys(a:type."\<up>")
+    call feedkeys(a:type."\<up>", 'n')
   else
     if a:type == ':'
       call histadd(a:type, item)
@@ -510,23 +510,23 @@ endfunction
 " ------------------------------------------------------------------
 " Rg
 " ------------------------------------------------------------------
-function! s:ag_to_qf(line, with_column)
-  let parts = split(a:line, ':')
-  let text = join(parts[(a:with_column ? 3 : 2):], ':')
+function! s:ag_to_qf(line, has_column)
+  let parts = split(a:line, '[^:]\zs:\ze[^:]')
+  let text = join(parts[(a:has_column ? 3 : 2):], ':')
   let dict = {'filename': &acd ? fnamemodify(parts[0], ':p') : parts[0], 'lnum': parts[1], 'text': text}
-  if a:with_column
+  if a:has_column
     let dict.col = parts[2]
   endif
   return dict
 endfunction
 
-function! s:ag_handler(lines, with_column)
+function! s:ag_handler(lines, has_column)
   if len(a:lines) < 2
     return
   endif
 
   let cmd = s:action_for(a:lines[0], 'e')
-  let list = map(filter(a:lines[1:], 'len(v:val)'), 's:ag_to_qf(v:val, a:with_column)')
+  let list = map(filter(a:lines[1:], 'len(v:val)'), 's:ag_to_qf(v:val, a:has_column)')
   if empty(list)
     return
   endif
@@ -535,7 +535,7 @@ function! s:ag_handler(lines, with_column)
   try
     call s:open(cmd, first.filename)
     execute first.lnum
-    if a:with_column
+    if a:has_column
       execute 'normal!' first.col.'|'
     endif
     normal! zz
@@ -545,8 +545,8 @@ function! s:ag_handler(lines, with_column)
   call s:fill_quickfix(list)
 endfunction
 
-" command, with_column, [options]
-function! fzf#vim#grep(grep_command, with_column, ...)
+" command (string), has_column (0/1), [options (dict)], [fullscreen (0/1)]
+function! fzf#vim#grep(grep_command, has_column, ...)
   let words = []
   for word in split(a:grep_command)
     if word !~# '^[a-z]'
@@ -558,8 +558,7 @@ function! fzf#vim#grep(grep_command, with_column, ...)
   let name    = join(words, '-')
   let capname = join(map(words, 'toupper(v:val[0]).v:val[1:]'), '')
   let opts = {
-  \ 'source':  a:grep_command,
-  \ 'column':  a:with_column,
+  \ 'column':  a:has_column,
   \ 'options': ['--ansi', '--prompt', capname.'> ',
   \             '--multi', '--bind', 'alt-a:select-all,alt-d:deselect-all',
   \             '--color', 'hl:4,hl+:12']
@@ -568,7 +567,13 @@ function! fzf#vim#grep(grep_command, with_column, ...)
     return s:ag_handler(a:lines, self.column)
   endfunction
   let opts['sink*'] = remove(opts, 'sink')
-  return s:fzf(name, opts, a:000)
+  try
+    let prev_default_command = $FZF_DEFAULT_COMMAND
+    let $FZF_DEFAULT_COMMAND = a:grep_command
+    return s:fzf(name, opts, a:000)
+  finally
+    let $FZF_DEFAULT_COMMAND = prev_default_command
+  endtry
 endfunction
 
 " ------------------------------------------------------------------
